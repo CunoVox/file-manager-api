@@ -10,12 +10,27 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${app.cors.allowed-origins:http://localhost:5173}")
     private String allowedOrigins;
 
+    @Value("${app.cors.allowed-origin-patterns:}")
+    private String allowedOriginPatterns;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")
-                .allowedOrigins(allowedOrigins.split(","))
+        var mapping = registry.addMapping("/**")
                 .allowedMethods("GET", "POST", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .exposedHeaders("Accept-Ranges", "Content-Range", "Content-Length", "Content-Disposition");
+        if (hasText(allowedOriginPatterns)) {
+            mapping.allowedOriginPatterns(split(allowedOriginPatterns));
+        } else {
+            mapping.allowedOrigins(split(allowedOrigins));
+        }
+    }
+
+    private String[] split(String value) {
+        return value.split("\\s*,\\s*");
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 }

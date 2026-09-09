@@ -4,6 +4,7 @@ import cloud.haovo.filemanager.api.ApiErrorResponse;
 import cloud.haovo.filemanager.security.ApiKeyAuthenticationFilter;
 import cloud.haovo.filemanager.security.JwtAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.context.annotation.Bean;
@@ -57,6 +58,7 @@ public class SecurityConfig {
                                 "You do not have permission to perform this action.", request.getRequestURI()))
                 .and()
                 .authorizeHttpRequests()
+                .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .antMatchers(
                         "/api/v1/auth/**",
                         "/view/**",

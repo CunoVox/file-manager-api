@@ -30,7 +30,7 @@ public class ApiExceptionHandler {
         Map<String, String> details = new LinkedHashMap<>();
         for (FieldError error : exception.getBindingResult().getFieldErrors()) {
             details.put(error.getField(), error.getDefaultMessage());
-        }
+        } 
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
                 "Please check the highlighted fields and try again.", request, details);
     }

@@ -38,6 +38,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
+        if (token.startsWith("hb_live_") || SecurityContextHolder.getContext().getAuthentication() != null) {
+            chain.doFilter(request, response);
+            return;
+        }
         try {
             String email = jwtService.extractUsername(token);
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {

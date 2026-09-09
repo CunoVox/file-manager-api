@@ -1,11 +1,13 @@
 package cloud.haovo.filemanager.api;
 
 import cloud.haovo.filemanager.domain.Folder;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Value;
 
 import java.time.Instant;
 
 @Value
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class FolderResponse {
     String id;
     String name;

@@ -27,3 +27,5 @@ app:
     cleanup-cron: "${TRASH_CLEANUP_CRON:0 15 2 * * *}"
   storage:
     health-cron: "${STORAGE_HEALTH_CRON:0 */10 * * * *}"
+  developer:
+    rate-limit-per-minute: ${DEVELOPER_RATE_LIMIT_PER_MINUTE:120}

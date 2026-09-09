@@ -2,11 +2,13 @@ package cloud.haovo.filemanager.api;
 
 import cloud.haovo.filemanager.domain.FileRecord;
 import cloud.haovo.filemanager.domain.User;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Value;
 
 import java.time.Instant;
 
 @Value
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class FileResponse {
     String id;
     String name;

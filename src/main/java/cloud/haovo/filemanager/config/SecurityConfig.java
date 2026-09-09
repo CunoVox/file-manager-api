@@ -1,6 +1,7 @@
 package cloud.haovo.filemanager.config;
 
 import cloud.haovo.filemanager.api.ApiErrorResponse;
+import cloud.haovo.filemanager.security.ApiKeyAuthenticationFilter;
 import cloud.haovo.filemanager.security.JwtAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
@@ -23,10 +24,13 @@ import javax.servlet.http.HttpServletResponse;
 @EnableMethodSecurity
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
+    private final ApiKeyAuthenticationFilter apiKeyFilter;
     private final ObjectMapper objectMapper;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtFilter, ObjectMapper objectMapper) {
+    public SecurityConfig(JwtAuthenticationFilter jwtFilter, ApiKeyAuthenticationFilter apiKeyFilter,
+            ObjectMapper objectMapper) {
         this.jwtFilter = jwtFilter;
+        this.apiKeyFilter = apiKeyFilter;
         this.objectMapper = objectMapper;
     }
 
@@ -63,6 +67,7 @@ public class SecurityConfig {
                         "/error")
                 .permitAll()
                 .anyRequest().authenticated().and()
+                .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

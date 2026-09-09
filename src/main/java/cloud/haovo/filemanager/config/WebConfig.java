@@ -19,10 +19,11 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedMethods("GET", "POST", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .exposedHeaders("Accept-Ranges", "Content-Range", "Content-Length", "Content-Disposition");
+        if (hasText(allowedOrigins)) {
+            mapping.allowedOrigins(split(allowedOrigins));
+        }
         if (hasText(allowedOriginPatterns)) {
             mapping.allowedOriginPatterns(split(allowedOriginPatterns));
-        } else {
-            mapping.allowedOrigins(split(allowedOrigins));
         }
     }
 

@@ -61,6 +61,7 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .antMatchers(
                         "/api/v1/auth/**",
+                        "/api/v1/payments/payos/webhook",
                         "/view/**",
                         "/download/**",
                         "/swagger-ui.html",

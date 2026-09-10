@@ -196,8 +196,10 @@ public class BillingService {
         if (!"00".equals(code) && !"PAID".equalsIgnoreCase(status)) {
             return;
         }
-        BillingOrder order = orders.findByProviderOrderCode(orderCode)
-                .orElseThrow(() -> new IllegalArgumentException("Billing order not found"));
+        BillingOrder order = orders.findByProviderOrderCode(orderCode).orElse(null);
+        if (order == null) {
+            return;
+        }
         if ("PAID".equals(order.getStatus())) return;
         order.setStatus("PAID");
         order.setPaidAt(Instant.now());

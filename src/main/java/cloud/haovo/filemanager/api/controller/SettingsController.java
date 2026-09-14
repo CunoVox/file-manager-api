@@ -1,11 +1,16 @@
 package cloud.haovo.filemanager.api.controller;
 
-
-import cloud.haovo.filemanager.api.request.*;
-import cloud.haovo.filemanager.api.response.*;
-import cloud.haovo.filemanager.service.TrashPolicyService;
-import cloud.haovo.filemanager.service.SmtpSettingsService;
+import cloud.haovo.filemanager.api.request.EmailTemplateRequest;
+import cloud.haovo.filemanager.api.request.SmtpSettingsRequest;
+import cloud.haovo.filemanager.api.request.SmtpTestRequest;
+import cloud.haovo.filemanager.api.request.TrashPolicyRequest;
+import cloud.haovo.filemanager.api.response.EmailTemplateResponse;
+import cloud.haovo.filemanager.api.response.SmtpSettingsResponse;
+import cloud.haovo.filemanager.api.response.SystemSettingsResponse;
+import cloud.haovo.filemanager.api.response.TrashPolicyResponse;
 import cloud.haovo.filemanager.service.EmailTemplateService;
+import cloud.haovo.filemanager.service.SmtpSettingsService;
+import cloud.haovo.filemanager.service.TrashPolicyService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -117,6 +122,4 @@ public class SettingsController {
                 Map.entry("loginLink", "https://example.com/login"));
     }
 }
-
-
 

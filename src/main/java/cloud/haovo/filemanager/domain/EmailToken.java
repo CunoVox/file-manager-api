@@ -47,3 +47,4 @@ public class EmailToken {
     private Instant createdAt = Instant.now();
 }
 
+

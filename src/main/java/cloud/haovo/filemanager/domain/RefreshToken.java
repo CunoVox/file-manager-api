@@ -4,7 +4,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import javax.persistence.*;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.Id;
+import javax.persistence.Index;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
+import javax.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -36,4 +43,5 @@ public class RefreshToken {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 }
+
 

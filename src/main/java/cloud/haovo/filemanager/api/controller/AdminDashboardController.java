@@ -1,11 +1,11 @@
 package cloud.haovo.filemanager.api.controller;
 
-
-import cloud.haovo.filemanager.api.request.*;
-import cloud.haovo.filemanager.api.response.*;
+import cloud.haovo.filemanager.api.response.AdminDashboardResponse;
 import cloud.haovo.filemanager.service.AdminDashboardService;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/admin/dashboard")
@@ -22,6 +22,4 @@ public class AdminDashboardController {
         return service.getDashboard();
     }
 }
-
-
 

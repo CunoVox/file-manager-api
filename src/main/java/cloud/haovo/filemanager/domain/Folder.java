@@ -4,7 +4,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import javax.persistence.*;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -38,4 +41,5 @@ public class Folder {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 }
+
 

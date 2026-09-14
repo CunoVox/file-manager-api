@@ -4,7 +4,11 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import javax.persistence.*;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Index;
+import javax.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -50,4 +54,5 @@ public class DeveloperApiKey {
     @Column(name = "revoked_at")
     private Instant revokedAt;
 }
+
 

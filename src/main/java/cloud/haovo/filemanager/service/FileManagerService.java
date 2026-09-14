@@ -54,7 +54,7 @@ public class FileManagerService {
             UserQuotaService userQuotaService,
             AuditLogService auditLogService,
             NotificationService notificationService,
-            @Value("${app.public-base-url:http://localhost:8080}") String publicBaseUrl) {
+            @Value("${app.public-base-url:http://localhost:8085}") String publicBaseUrl) {
         this.fileRepository = fileRepository;
         this.fileShareRepository = fileShareRepository;
         this.folderRepository = folderRepository;

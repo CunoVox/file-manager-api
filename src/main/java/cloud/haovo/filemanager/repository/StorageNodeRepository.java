@@ -12,3 +12,4 @@ public interface StorageNodeRepository extends JpaRepository<StorageNode, Long> 
     @Query("select n from StorageNode n where n.enabled = true order by n.priority asc, (n.capacityBytes - n.usedBytes) desc, n.id asc")
     List<StorageNode> findUploadCandidates();
 }
+

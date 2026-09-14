@@ -16,8 +16,11 @@ public interface NotificationRepository extends JpaRepository<Notification, Stri
 
     long countByUserIdAndReadAtIsNull(String userId);
 
+    boolean existsByUserIdAndTypeAndTargetId(String userId, String type, String targetId);
+
     @Modifying
     @Transactional
     @Query("update Notification notification set notification.readAt = :readAt where notification.userId = :userId and notification.readAt is null")
     int markAllRead(@Param("userId") String userId, @Param("readAt") Instant readAt);
 }
+

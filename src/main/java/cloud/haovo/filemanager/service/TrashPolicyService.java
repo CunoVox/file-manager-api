@@ -1,7 +1,7 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.TrashPolicyRequest;
-import cloud.haovo.filemanager.api.TrashPolicyResponse;
+import cloud.haovo.filemanager.api.request.TrashPolicyRequest;
+import cloud.haovo.filemanager.api.response.TrashPolicyResponse;
 import cloud.haovo.filemanager.domain.AppSetting;
 import cloud.haovo.filemanager.repository.AppSettingRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,3 +61,4 @@ public class TrashPolicyService {
         }
     }
 }
+

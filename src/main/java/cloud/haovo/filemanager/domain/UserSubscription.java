@@ -44,3 +44,4 @@ public class UserSubscription {
     @Column(nullable = false)
     private boolean active = true;
 }
+

@@ -16,3 +16,4 @@ public class OpenApiConfig {
                         .description("API documentation for HaoBox file management and MinIO/S3 storage."));
     }
 }
+

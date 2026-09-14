@@ -1,6 +1,6 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.NotificationResponse;
+import cloud.haovo.filemanager.api.response.NotificationResponse;
 import cloud.haovo.filemanager.domain.Notification;
 import cloud.haovo.filemanager.domain.User;
 import cloud.haovo.filemanager.domain.UserRole;
@@ -100,7 +100,7 @@ public class NotificationService {
     }
 
     private void sendNotificationEmail(User user, String type, String title, String message, String targetId) {
-        if (!isAdminAlert(type)) {
+        if (!shouldEmail(type)) {
             return;
         }
         EmailTemplateService.RenderedEmail email = emailTemplateService.render(EmailTemplateService.ADMIN_ALERT,
@@ -116,8 +116,10 @@ public class NotificationService {
         }
     }
 
-    private boolean isAdminAlert(String type) {
-        return type != null && (type.startsWith("STORAGE_NODE_") || type.startsWith("STORAGE_MIGRATION_"));
+    private boolean shouldEmail(String type) {
+        return type != null && (type.startsWith("STORAGE_NODE_")
+                || type.startsWith("STORAGE_MIGRATION_")
+                || type.startsWith("BILLING_SUBSCRIPTION_"));
     }
 
     private User currentUser() {
@@ -134,3 +136,4 @@ public class NotificationService {
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
     }
 }
+

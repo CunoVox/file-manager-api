@@ -1,0 +1,15 @@
+package cloud.haovo.filemanager.api.request;
+
+import lombok.Data;
+
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Size;
+
+@Data
+public class RenameRequest {
+    @NotBlank
+    @Size(max = 255)
+    private String name;
+}
+
+

@@ -47,3 +47,4 @@ public interface FileRepository extends JpaRepository<FileRecord, String> {
             "AND parent_id IN (SELECT id FROM folder_tree)", nativeQuery = true)
     int deleteTreeFiles(@Param("folderId") String folderId, @Param("ownerId") String ownerId);
 }
+

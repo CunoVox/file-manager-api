@@ -1,6 +1,6 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.AuditLogResponse;
+import cloud.haovo.filemanager.api.response.AuditLogResponse;
 import cloud.haovo.filemanager.domain.AuditLog;
 import cloud.haovo.filemanager.domain.User;
 import cloud.haovo.filemanager.repository.AuditLogRepository;
@@ -123,3 +123,4 @@ public class AuditLogService {
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
     }
 }
+

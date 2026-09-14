@@ -176,3 +176,4 @@ public class MinioStorageService {
         public String getName() { return name; } public String getMimeType() { return mimeType; } public Long getSize() { return size; } public long getTotalSize() { return totalSize; } public long getRangeStart() { return rangeStart; } public long getRangeEnd() { return rangeEnd; } public boolean isPartial() { return partial; } public InputStream getStream() { return stream; }
     }
 }
+

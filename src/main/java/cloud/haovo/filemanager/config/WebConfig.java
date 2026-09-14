@@ -66,3 +66,4 @@ public class WebConfig implements WebMvcConfigurer {
         return value != null && !value.trim().isEmpty();
     }
 }
+

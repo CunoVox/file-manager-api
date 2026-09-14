@@ -13,3 +13,4 @@ public interface StorageMigrationJobRepository extends JpaRepository<StorageMigr
 
     boolean existsByTargetNodeIdAndStatusIn(Long targetNodeId, List<StorageMigrationStatus> statuses);
 }
+

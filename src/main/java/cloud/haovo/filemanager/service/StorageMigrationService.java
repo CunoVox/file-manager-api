@@ -1,6 +1,6 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.StorageMigrationJobResponse;
+import cloud.haovo.filemanager.api.response.StorageMigrationJobResponse;
 import cloud.haovo.filemanager.domain.FileRecord;
 import cloud.haovo.filemanager.domain.StorageMigrationJob;
 import cloud.haovo.filemanager.domain.StorageMigrationStatus;
@@ -99,3 +99,4 @@ public class StorageMigrationService {
         return StorageMigrationJobResponse.from(job, sourceName, targetName);
     }
 }
+

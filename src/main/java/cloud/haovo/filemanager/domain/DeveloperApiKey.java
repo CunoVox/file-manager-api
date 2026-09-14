@@ -50,3 +50,4 @@ public class DeveloperApiKey {
     @Column(name = "revoked_at")
     private Instant revokedAt;
 }
+

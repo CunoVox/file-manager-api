@@ -57,3 +57,4 @@ public class StorageMigrationJob {
     @Column(name = "finished_at")
     private Instant finishedAt;
 }
+

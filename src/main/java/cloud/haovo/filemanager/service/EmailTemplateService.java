@@ -1,7 +1,7 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.EmailTemplateRequest;
-import cloud.haovo.filemanager.api.EmailTemplateResponse;
+import cloud.haovo.filemanager.api.request.EmailTemplateRequest;
+import cloud.haovo.filemanager.api.response.EmailTemplateResponse;
 import cloud.haovo.filemanager.domain.AppSetting;
 import cloud.haovo.filemanager.repository.AppSettingRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -365,3 +365,4 @@ public class EmailTemplateService {
         }
     }
 }
+

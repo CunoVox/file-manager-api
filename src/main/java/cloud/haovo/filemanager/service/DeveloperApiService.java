@@ -1,9 +1,9 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.ApiUsageLogResponse;
-import cloud.haovo.filemanager.api.DeveloperApiKeyRequest;
-import cloud.haovo.filemanager.api.DeveloperApiKeyResponse;
-import cloud.haovo.filemanager.api.DeveloperStatsResponse;
+import cloud.haovo.filemanager.api.response.ApiUsageLogResponse;
+import cloud.haovo.filemanager.api.request.DeveloperApiKeyRequest;
+import cloud.haovo.filemanager.api.response.DeveloperApiKeyResponse;
+import cloud.haovo.filemanager.api.response.DeveloperStatsResponse;
 import cloud.haovo.filemanager.domain.ApiUsageLog;
 import cloud.haovo.filemanager.domain.DeveloperApiKey;
 import cloud.haovo.filemanager.domain.User;
@@ -282,3 +282,4 @@ public class DeveloperApiService {
         }
     }
 }
+

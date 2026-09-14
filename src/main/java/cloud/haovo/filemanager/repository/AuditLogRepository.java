@@ -24,3 +24,4 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, String> {
     Page<AuditLog> search(@Param("action") String action, @Param("keyword") String keyword,
             @Param("from") Instant from, @Param("to") Instant to, Pageable pageable);
 }
+

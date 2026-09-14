@@ -33,3 +33,4 @@ public class AppSetting {
         this.value = value;
     }
 }
+

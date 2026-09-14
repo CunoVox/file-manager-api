@@ -1,8 +1,8 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.FileResponse;
-import cloud.haovo.filemanager.api.FileShareResponse;
-import cloud.haovo.filemanager.api.FolderResponse;
+import cloud.haovo.filemanager.api.response.FileResponse;
+import cloud.haovo.filemanager.api.response.FileShareResponse;
+import cloud.haovo.filemanager.api.response.FolderResponse;
 import cloud.haovo.filemanager.domain.FileRecord;
 import cloud.haovo.filemanager.domain.FileShare;
 import cloud.haovo.filemanager.domain.Folder;
@@ -580,3 +580,4 @@ public class FileManagerService {
         return candidate;
     }
 }
+

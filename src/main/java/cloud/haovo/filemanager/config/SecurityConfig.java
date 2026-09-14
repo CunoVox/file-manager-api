@@ -1,6 +1,6 @@
 package cloud.haovo.filemanager.config;
 
-import cloud.haovo.filemanager.api.ApiErrorResponse;
+import cloud.haovo.filemanager.api.common.ApiErrorResponse;
 import cloud.haovo.filemanager.security.ApiKeyAuthenticationFilter;
 import cloud.haovo.filemanager.security.JwtAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -61,6 +61,7 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .antMatchers(
                         "/api/v1/auth/**",
+                        "/api/v1/billing/plans",
                         "/api/v1/payments/payos/webhook",
                         "/view/**",
                         "/download/**",
@@ -82,3 +83,4 @@ public class SecurityConfig {
         objectMapper.writeValue(response.getOutputStream(), ApiErrorResponse.of(status, code, message, path));
     }
 }
+

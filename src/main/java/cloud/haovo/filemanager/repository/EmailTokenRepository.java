@@ -8,3 +8,4 @@ import java.util.Optional;
 public interface EmailTokenRepository extends JpaRepository<EmailToken, String> {
     Optional<EmailToken> findByIdAndTypeAndConsumedAtIsNull(String id, String type);
 }
+

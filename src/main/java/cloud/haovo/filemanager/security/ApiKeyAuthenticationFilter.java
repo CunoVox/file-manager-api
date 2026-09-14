@@ -1,6 +1,6 @@
 package cloud.haovo.filemanager.security;
 
-import cloud.haovo.filemanager.api.ApiErrorResponse;
+import cloud.haovo.filemanager.api.common.ApiErrorResponse;
 import cloud.haovo.filemanager.domain.User;
 import cloud.haovo.filemanager.service.DeveloperApiService;
 import cloud.haovo.filemanager.service.DeveloperApiService.RateLimitExceededException;
@@ -83,3 +83,4 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         objectMapper.writeValue(response.getOutputStream(), ApiErrorResponse.of(status, code, message, path));
     }
 }
+

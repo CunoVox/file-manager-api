@@ -1,10 +1,13 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.AdminUserRequests;
-import cloud.haovo.filemanager.api.AdminUserResponse;
+import cloud.haovo.filemanager.api.request.AdminUserRequests;
+import cloud.haovo.filemanager.api.response.AdminUserResponse;
 import cloud.haovo.filemanager.domain.User;
 import cloud.haovo.filemanager.domain.UserRole;
 import cloud.haovo.filemanager.repository.UserRepository;
+import cloud.haovo.filemanager.repository.UserSubscriptionRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,18 +27,20 @@ public class AdminUserService {
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final UserQuotaService userQuotaService;
+    private final UserSubscriptionRepository subscriptions;
     private final AuditLogService auditLogService;
     private final SmtpSettingsService smtpSettingsService;
     private final EmailTemplateService emailTemplateService;
     private final String webBaseUrl;
 
     public AdminUserService(UserRepository users, PasswordEncoder passwordEncoder,
-            UserQuotaService userQuotaService, AuditLogService auditLogService,
+            UserQuotaService userQuotaService, UserSubscriptionRepository subscriptions, AuditLogService auditLogService,
             SmtpSettingsService smtpSettingsService, EmailTemplateService emailTemplateService,
             @org.springframework.beans.factory.annotation.Value("${app.web-base-url:http://localhost:5173}") String webBaseUrl) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.userQuotaService = userQuotaService;
+        this.subscriptions = subscriptions;
         this.auditLogService = auditLogService;
         this.smtpSettingsService = smtpSettingsService;
         this.emailTemplateService = emailTemplateService;
@@ -46,6 +51,13 @@ public class AdminUserService {
         return users.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    public Page<AdminUserResponse> pageUsers(int page, int size) {
+        int normalizedPage = Math.max(0, page);
+        int normalizedSize = Math.max(1, Math.min(size, 100));
+        return users.findAll(PageRequest.of(normalizedPage, normalizedSize, Sort.by(Sort.Direction.DESC, "createdAt")))
+                .map(this::toResponse);
     }
 
     public AdminUserResponse createUser(AdminUserRequests.Create request) {
@@ -153,8 +165,11 @@ public class AdminUserService {
     }
 
     private AdminUserResponse toResponse(User user) {
-        return AdminUserResponse.from(user, userQuotaService.effectiveQuotaBytes(user),
-                userQuotaService.usedBytes(user));
+        return subscriptions.findFirstByUserIdAndActiveTrueOrderByStartsAtDesc(user.getId())
+                .map(subscription -> AdminUserResponse.from(user, userQuotaService.effectiveQuotaBytes(user),
+                        userQuotaService.usedBytes(user), subscription.getPlanName(), subscription.getExpiresAt()))
+                .orElseGet(() -> AdminUserResponse.from(user, userQuotaService.effectiveQuotaBytes(user),
+                        userQuotaService.usedBytes(user), null, null));
     }
 
     private void sendUserPasswordEmail(User user, String password, String templateKey) {
@@ -168,3 +183,4 @@ public class AdminUserService {
         }
     }
 }
+

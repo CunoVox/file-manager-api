@@ -1,7 +1,7 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.AuthRequests;
-import cloud.haovo.filemanager.api.AuthResponse;
+import cloud.haovo.filemanager.api.request.AuthRequests;
+import cloud.haovo.filemanager.api.response.AuthResponse;
 import cloud.haovo.filemanager.domain.EmailToken;
 import cloud.haovo.filemanager.domain.TwoFactorChallenge;
 import cloud.haovo.filemanager.domain.User;
@@ -286,3 +286,4 @@ public class AuthService {
         return emailTokens.save(token);
     }
 }
+

@@ -42,3 +42,4 @@ public interface FolderRepository extends JpaRepository<Folder, String> {
             "AND id IN (SELECT id FROM folder_tree)", nativeQuery = true)
     int deleteTreeFolders(@Param("folderId") String folderId, @Param("ownerId") String ownerId);
 }
+

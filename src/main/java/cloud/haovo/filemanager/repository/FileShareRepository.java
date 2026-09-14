@@ -21,3 +21,4 @@ public interface FileShareRepository extends JpaRepository<FileShare, String> {
 
     void deleteByFileIdAndSharedWithUserId(String fileId, String sharedWithUserId);
 }
+

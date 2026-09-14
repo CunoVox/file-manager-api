@@ -1,7 +1,7 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.SmtpSettingsRequest;
-import cloud.haovo.filemanager.api.SmtpSettingsResponse;
+import cloud.haovo.filemanager.api.request.SmtpSettingsRequest;
+import cloud.haovo.filemanager.api.response.SmtpSettingsResponse;
 import cloud.haovo.filemanager.domain.AppSetting;
 import cloud.haovo.filemanager.domain.User;
 import cloud.haovo.filemanager.repository.AppSettingRepository;
@@ -226,3 +226,4 @@ public class SmtpSettingsService {
         return value != null && !value.trim().isEmpty();
     }
 }
+

@@ -9,3 +9,4 @@ public interface BillingPlanRepository extends JpaRepository<BillingPlan, String
     List<BillingPlan> findByActiveTrueOrderBySortOrderAscCreatedAtAsc();
     List<BillingPlan> findAllByOrderBySortOrderAscCreatedAtAsc();
 }
+

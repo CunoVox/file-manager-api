@@ -8,3 +8,4 @@ import java.util.Optional;
 public interface TwoFactorChallengeRepository extends JpaRepository<TwoFactorChallenge, String> {
     Optional<TwoFactorChallenge> findByIdAndConsumedAtIsNull(String id);
 }
+

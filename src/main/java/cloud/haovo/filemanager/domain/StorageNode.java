@@ -30,3 +30,4 @@ public class StorageNode {
     @Column(name = "last_checked_at") private Instant lastCheckedAt;
     @Column(name = "last_error", length = 500) private String lastError;
 }
+

@@ -32,3 +32,4 @@ public class FileManagerApplication {
         log.info("OpenAPI JSON: http://localhost:{}{}/v3/api-docs", port, contextPath);
     }
 }
+

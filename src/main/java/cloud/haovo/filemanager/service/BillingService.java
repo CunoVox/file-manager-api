@@ -1,14 +1,18 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.BillingDtos;
+
+import cloud.haovo.filemanager.api.request.*;
+import cloud.haovo.filemanager.api.response.*;
 import cloud.haovo.filemanager.domain.AppSetting;
 import cloud.haovo.filemanager.domain.BillingOrder;
 import cloud.haovo.filemanager.domain.BillingPlan;
+import cloud.haovo.filemanager.domain.PaymentWebhookLog;
 import cloud.haovo.filemanager.domain.User;
 import cloud.haovo.filemanager.domain.UserSubscription;
 import cloud.haovo.filemanager.repository.AppSettingRepository;
 import cloud.haovo.filemanager.repository.BillingOrderRepository;
 import cloud.haovo.filemanager.repository.BillingPlanRepository;
+import cloud.haovo.filemanager.repository.PaymentWebhookLogRepository;
 import cloud.haovo.filemanager.repository.UserRepository;
 import cloud.haovo.filemanager.repository.UserSubscriptionRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -49,6 +53,7 @@ public class BillingService {
     private final AppSettingRepository settings;
     private final BillingPlanRepository plans;
     private final BillingOrderRepository orders;
+    private final PaymentWebhookLogRepository webhookLogs;
     private final UserSubscriptionRepository subscriptions;
     private final UserRepository users;
     private final AuditLogService auditLogService;
@@ -60,12 +65,13 @@ public class BillingService {
     private final String webBaseUrl;
 
     public BillingService(AppSettingRepository settings, BillingPlanRepository plans, BillingOrderRepository orders,
-            UserSubscriptionRepository subscriptions, UserRepository users, AuditLogService auditLogService,
+            PaymentWebhookLogRepository webhookLogs, UserSubscriptionRepository subscriptions, UserRepository users, AuditLogService auditLogService,
             NotificationService notificationService, SecretEncryptionService encryptionService, ObjectMapper objectMapper,
             @Value("${app.public-base-url}") String publicBaseUrl, @Value("${app.web-base-url}") String webBaseUrl) {
         this.settings = settings;
         this.plans = plans;
         this.orders = orders;
+        this.webhookLogs = webhookLogs;
         this.subscriptions = subscriptions;
         this.users = users;
         this.auditLogService = auditLogService;
@@ -77,8 +83,8 @@ public class BillingService {
     }
 
     @Transactional(readOnly = true)
-    public BillingDtos.PayosSettingsResponse payosSettings() {
-        return new BillingDtos.PayosSettingsResponse(bool(ENABLED, false), value(CLIENT_ID, ""),
+    public PayosSettingsResponse payosSettings() {
+        return new PayosSettingsResponse(bool(ENABLED, false), value(CLIENT_ID, ""),
                 hasText(value(API_KEY, "")), hasText(value(CHECKSUM_KEY, "")),
                 value(RETURN_URL, webBaseUrl + "/billing/success"),
                 value(CANCEL_URL, webBaseUrl + "/billing/cancel"),
@@ -87,7 +93,7 @@ public class BillingService {
     }
 
     @Transactional
-    public BillingDtos.PayosSettingsResponse updatePayosSettings(BillingDtos.PayosSettingsRequest request) {
+    public PayosSettingsResponse updatePayosSettings(PayosSettingsRequest request) {
         if ((hasText(request.getApiKey()) || hasText(request.getChecksumKey())) && !encryptionService.isConfigured()) {
             throw new IllegalStateException("APP_ENCRYPTION_KEY is required to store PayOS secrets");
         }
@@ -108,39 +114,39 @@ public class BillingService {
     }
 
     @Transactional(readOnly = true)
-    public List<BillingDtos.BillingPlanResponse> publicPlans() {
+    public List<BillingPlanResponse> publicPlans() {
         return plans.findByActiveTrueOrderBySortOrderAscCreatedAtAsc().stream()
-                .map(BillingDtos.BillingPlanResponse::from).collect(Collectors.toList());
+                .map(BillingPlanResponse::from).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
-    public List<BillingDtos.BillingPlanResponse> adminPlans() {
+    public List<BillingPlanResponse> adminPlans() {
         return plans.findAllByOrderBySortOrderAscCreatedAtAsc().stream()
-                .map(BillingDtos.BillingPlanResponse::from).collect(Collectors.toList());
+                .map(BillingPlanResponse::from).collect(Collectors.toList());
     }
 
     @Transactional
-    public BillingDtos.BillingPlanResponse createPlan(BillingDtos.BillingPlanRequest request) {
+    public BillingPlanResponse createPlan(BillingPlanRequest request) {
         BillingPlan plan = new BillingPlan();
         apply(plan, request);
         BillingPlan saved = plans.save(plan);
         auditLogService.record("BILLING_PLAN_CREATED", "BILLING_PLAN", saved.getId(), saved.getName(),
                 "Created quota plan " + saved.getName(), Map.of("price", saved.getPrice(), "quotaBytes", saved.getQuotaBytes()));
-        return BillingDtos.BillingPlanResponse.from(saved);
+        return BillingPlanResponse.from(saved);
     }
 
     @Transactional
-    public BillingDtos.BillingPlanResponse updatePlan(String id, BillingDtos.BillingPlanRequest request) {
+    public BillingPlanResponse updatePlan(String id, BillingPlanRequest request) {
         BillingPlan plan = plans.findById(id).orElseThrow(() -> new IllegalArgumentException("Billing plan not found"));
         apply(plan, request);
         BillingPlan saved = plans.save(plan);
         auditLogService.record("BILLING_PLAN_UPDATED", "BILLING_PLAN", saved.getId(), saved.getName(),
                 "Updated quota plan " + saved.getName());
-        return BillingDtos.BillingPlanResponse.from(saved);
+        return BillingPlanResponse.from(saved);
     }
 
     @Transactional
-    public BillingDtos.CheckoutResponse checkout(String planId) {
+    public CheckoutResponse checkout(String planId) {
         User user = currentUser();
         BillingPlan plan = plans.findById(planId).orElseThrow(() -> new IllegalArgumentException("Billing plan not found"));
         if (!plan.isActive()) throw new IllegalArgumentException("Billing plan is inactive");
@@ -179,39 +185,141 @@ public class BillingService {
         order.setCheckoutUrl(data.path("checkoutUrl").asText());
         order.setPaymentLinkId(data.path("paymentLinkId").asText(""));
         orders.save(order);
-        return new BillingDtos.CheckoutResponse(order.getId(), order.getProviderOrderCode(), order.getCheckoutUrl());
+        return new CheckoutResponse(order.getId(), order.getProviderOrderCode(), order.getCheckoutUrl());
     }
 
     @Transactional
     public void handlePayosWebhook(JsonNode payload) {
-        PayosConfig config = payosConfig();
-        JsonNode data = payload.path("data");
-        String signature = payload.path("signature").asText("");
-        if (!verifyWebhook(data, signature, config.checksumKey)) {
-            throw new IllegalArgumentException("Invalid PayOS webhook signature");
+        PaymentWebhookLog log = new PaymentWebhookLog();
+        log.setPayloadJson(payload == null ? "{}" : payload.toString());
+        try {
+            PayosConfig config = payosConfig();
+            JsonNode data = payload.path("data");
+            String signature = payload.path("signature").asText("");
+            if (!verifyWebhook(data, signature, config.checksumKey)) {
+                log.setStatus("FAILED");
+                log.setErrorMessage("Invalid PayOS webhook signature");
+                webhookLogs.save(log);
+                return;
+            }
+            long orderCode = data.path("orderCode").asLong();
+            log.setProviderOrderCode(orderCode);
+            String code = payload.path("code").asText("");
+            String status = data.path("status").asText("");
+            if (!"00".equals(code) && !"PAID".equalsIgnoreCase(status)) {
+                log.setStatus("IGNORED");
+                webhookLogs.save(log);
+                return;
+            }
+            BillingOrder order = orders.findByProviderOrderCode(orderCode).orElse(null);
+            if (order == null) {
+                log.setStatus("IGNORED");
+                log.setErrorMessage("Billing order not found");
+                webhookLogs.save(log);
+                return;
+            }
+            if ("PAID".equals(order.getStatus())) {
+                log.setStatus("IGNORED");
+                log.setErrorMessage("Billing order already paid");
+                webhookLogs.save(log);
+                return;
+            }
+            order.setStatus("PAID");
+            order.setPaidAt(Instant.now());
+            orders.save(order);
+            activateSubscription(order);
+            log.setStatus("PROCESSED");
+            webhookLogs.save(log);
+        } catch (RuntimeException exception) {
+            if (!"FAILED".equals(log.getStatus())) {
+                log.setStatus("FAILED");
+                log.setErrorMessage(trim(exception.getMessage(), 1000));
+                webhookLogs.save(log);
+            }
         }
-        long orderCode = data.path("orderCode").asLong();
-        String code = payload.path("code").asText("");
-        String status = data.path("status").asText("");
-        if (!"00".equals(code) && !"PAID".equalsIgnoreCase(status)) {
-            return;
-        }
-        BillingOrder order = orders.findByProviderOrderCode(orderCode).orElse(null);
-        if (order == null) {
-            return;
-        }
-        if ("PAID".equals(order.getStatus())) return;
-        order.setStatus("PAID");
-        order.setPaidAt(Instant.now());
-        orders.save(order);
-        activateSubscription(order);
     }
 
     @Transactional(readOnly = true)
-    public Page<BillingDtos.BillingOrderResponse> myOrders(int page, int size) {
+    public Page<BillingOrderResponse> myOrders(int page, int size) {
         User user = currentUser();
         return orders.findByUserIdOrderByCreatedAtDesc(user.getId(), PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 50)))
-                .map(BillingDtos.BillingOrderResponse::from);
+                .map(BillingOrderResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserSubscriptionResponse> mySubscriptions() {
+        User user = currentUser();
+        return subscriptions.findByUserIdOrderByStartsAtDesc(user.getId()).stream()
+                .map(subscription -> UserSubscriptionResponse.from(subscription, user))
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public BillingDashboardResponse dashboard() {
+        long paidOrders = orders.countByStatus("PAID");
+        long pendingOrders = orders.countByStatus("PENDING");
+        long paidRevenue = orders.findByStatusOrderByCreatedAtDesc("PAID", PageRequest.of(0, 1000)).stream()
+                .mapToLong(BillingOrder::getAmount).sum();
+        List<BillingOrderResponse> recent = orders.findAllByOrderByCreatedAtDesc(PageRequest.of(0, 5))
+                .map(order -> BillingOrderResponse.from(order, users.findById(order.getUserId()).orElse(null)))
+                .getContent();
+        return new BillingDashboardResponse(plans.count(), subscriptions.countByActiveTrue(),
+                paidOrders, pendingOrders, paidRevenue, recent);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<BillingOrderResponse> adminOrders(String status, int page, int size) {
+        Page<BillingOrder> result = hasText(status)
+                ? orders.findByStatusOrderByCreatedAtDesc(status.trim().toUpperCase(), PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))
+                : orders.findAllByOrderByCreatedAtDesc(PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)));
+        return result.map(order -> BillingOrderResponse.from(order, users.findById(order.getUserId()).orElse(null)));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<UserSubscriptionResponse> adminSubscriptions(int page, int size) {
+        return subscriptions.findAll(PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))
+                .map(subscription -> UserSubscriptionResponse.from(subscription,
+                        users.findById(subscription.getUserId()).orElse(null)));
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserSubscriptionResponse> subscriptionsForUser(String userId) {
+        return subscriptions.findByUserIdOrderByStartsAtDesc(userId).stream()
+                .map(subscription -> UserSubscriptionResponse.from(subscription,
+                        users.findById(subscription.getUserId()).orElse(null)))
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public UserSubscriptionResponse assignPlan(AssignPlanRequest request) {
+        User user = users.findById(request.getUserId()).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        BillingPlan plan = plans.findById(request.getPlanId()).orElseThrow(() -> new IllegalArgumentException("Billing plan not found"));
+        subscriptions.findFirstByUserIdAndActiveTrueOrderByStartsAtDesc(user.getId()).ifPresent(subscription -> {
+            subscription.setActive(false);
+            subscriptions.save(subscription);
+        });
+        UserSubscription subscription = new UserSubscription();
+        subscription.setUserId(user.getId());
+        subscription.setPlanId(plan.getId());
+        subscription.setPlanName(plan.getName());
+        subscription.setQuotaBytes(plan.getQuotaBytes());
+        if (plan.getDurationDays() > 0) {
+            subscription.setExpiresAt(Instant.now().plusSeconds(plan.getDurationDays() * 86400L));
+        }
+        subscriptions.save(subscription);
+        user.setStorageQuotaBytes(plan.getQuotaBytes());
+        users.save(user);
+        auditLogService.record("BILLING_PLAN_ASSIGNED", "USER", user.getId(), user.getEmail(),
+                "Assigned billing plan " + plan.getName(), Map.of("planId", plan.getId(), "quotaBytes", plan.getQuotaBytes()));
+        notificationService.notifyUser(user.getId(), "BILLING_PLAN_ASSIGNED", "Storage plan updated",
+                "Your HaoBox storage plan was updated to " + plan.getName() + ".", "USER_SUBSCRIPTION", subscription.getId());
+        return UserSubscriptionResponse.from(subscription, user);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<WebhookLogResponse> webhookLogs(int page, int size) {
+        return webhookLogs.findAllByOrderByCreatedAtDesc(PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))
+                .map(WebhookLogResponse::from);
     }
 
     private void activateSubscription(BillingOrder order) {
@@ -238,7 +346,7 @@ public class BillingService {
                 "Paid quota plan " + order.getPlanName(), Map.of("userId", user.getId(), "amount", order.getAmount()));
     }
 
-    private void apply(BillingPlan plan, BillingDtos.BillingPlanRequest request) {
+    private void apply(BillingPlan plan, BillingPlanRequest request) {
         plan.setName(clean(request.getName()));
         plan.setQuotaBytes(request.getQuotaGb() * GB);
         plan.setPrice(request.getPrice());
@@ -356,3 +464,5 @@ public class BillingService {
         }
     }
 }
+
+

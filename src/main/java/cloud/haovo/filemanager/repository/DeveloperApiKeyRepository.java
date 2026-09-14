@@ -15,3 +15,4 @@ public interface DeveloperApiKeyRepository extends JpaRepository<DeveloperApiKey
 
     Optional<DeveloperApiKey> findByKeyHash(String keyHash);
 }
+

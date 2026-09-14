@@ -1,6 +1,16 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.request.AuthRequests;
+import cloud.haovo.filemanager.api.request.ChangePasswordRequest;
+import cloud.haovo.filemanager.api.request.ForgotPasswordRequest;
+import cloud.haovo.filemanager.api.request.LoginRequest;
+import cloud.haovo.filemanager.api.request.RefreshTokenRequest;
+import cloud.haovo.filemanager.api.request.RegisterRequest;
+import cloud.haovo.filemanager.api.request.ResendVerificationRequest;
+import cloud.haovo.filemanager.api.request.ResetPasswordRequest;
+import cloud.haovo.filemanager.api.request.UpdateProfileRequest;
+import cloud.haovo.filemanager.api.request.UpdateTwoFactorRequest;
+import cloud.haovo.filemanager.api.request.VerifyEmailRequest;
+import cloud.haovo.filemanager.api.request.VerifyTwoFactorRequest;
 import cloud.haovo.filemanager.api.response.AuthResponse;
 import cloud.haovo.filemanager.domain.EmailToken;
 import cloud.haovo.filemanager.domain.TwoFactorChallenge;
@@ -67,7 +77,7 @@ public class AuthService {
         this.webBaseUrl = webBaseUrl.replaceAll("/+$", "");
     }
 
-    public AuthResponse register(AuthRequests.Register request) {
+    public AuthResponse register(RegisterRequest request) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
         if (users.existsByEmailIgnoreCase(email))
             throw new IllegalArgumentException("Email is already registered");
@@ -81,7 +91,7 @@ public class AuthService {
         return AuthResponse.emailVerificationRequired(user.getEmail());
     }
 
-    public AuthResponse login(AuthRequests.Login request) {
+    public AuthResponse login(LoginRequest request) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(email, request.getPassword()));
@@ -98,7 +108,7 @@ public class AuthService {
     }
 
     @Transactional
-    public void verifyEmail(AuthRequests.VerifyEmail request) {
+    public void verifyEmail(VerifyEmailRequest request) {
         EmailToken token = consumeEmailToken(request.getToken(), EmailTemplateService.VERIFY_EMAIL);
         User user = token.getUser();
         user.setEmailVerified(true);
@@ -108,21 +118,21 @@ public class AuthService {
     }
 
     @Transactional
-    public void resendVerification(AuthRequests.ResendVerification request) {
+    public void resendVerification(ResendVerificationRequest request) {
         users.findByEmailIgnoreCase(request.getEmail().trim().toLowerCase(Locale.ROOT))
                 .filter(user -> !user.isEmailVerified())
                 .ifPresent(this::sendEmailVerification);
     }
 
     @Transactional
-    public void forgotPassword(AuthRequests.ForgotPassword request) {
+    public void forgotPassword(ForgotPasswordRequest request) {
         users.findByEmailIgnoreCase(request.getEmail().trim().toLowerCase(Locale.ROOT))
                 .filter(User::isEnabled)
                 .ifPresent(this::sendPasswordReset);
     }
 
     @Transactional
-    public void resetPassword(AuthRequests.ResetPassword request) {
+    public void resetPassword(ResetPasswordRequest request) {
         EmailToken token = consumeEmailToken(request.getToken(), EmailTemplateService.FORGOT_PASSWORD);
         User user = token.getUser();
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
@@ -133,7 +143,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse verifyTwoFactor(AuthRequests.VerifyTwoFactor request) {
+    public AuthResponse verifyTwoFactor(VerifyTwoFactorRequest request) {
         TwoFactorChallenge challenge = twoFactorChallenges.findByIdAndConsumedAtIsNull(request.getChallengeId())
                 .orElseThrow(() -> new IllegalArgumentException("Verification code is invalid or expired"));
         if (challenge.getExpiresAt().isBefore(Instant.now())) {
@@ -153,17 +163,17 @@ public class AuthService {
         return session(user);
     }
 
-    public AuthResponse refresh(AuthRequests.Refresh request) {
+    public AuthResponse refresh(RefreshTokenRequest request) {
         User user = refreshTokenService.consume(request.getRefreshToken());
         if (!user.isEnabled()) throw new IllegalArgumentException("User is disabled");
         return session(user);
     }
 
-    public void logout(AuthRequests.Refresh request) {
+    public void logout(RefreshTokenRequest request) {
         refreshTokenService.revoke(request.getRefreshToken());
     }
 
-    public AuthResponse.UserResponse updateProfile(String email, AuthRequests.UpdateProfile request) {
+    public AuthResponse.UserResponse updateProfile(String email, UpdateProfileRequest request) {
         User user = findByEmail(email);
         String fullName = request.getFullName() == null ? "" : request.getFullName().trim();
         if (fullName.isEmpty()) {
@@ -176,7 +186,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse changePassword(String email, AuthRequests.ChangePassword request) {
+    public AuthResponse changePassword(String email, ChangePasswordRequest request) {
         User user = findByEmail(email);
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("Current password is incorrect");
@@ -191,7 +201,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse.UserResponse updateTwoFactor(String email, AuthRequests.UpdateTwoFactor request) {
+    public AuthResponse.UserResponse updateTwoFactor(String email, UpdateTwoFactorRequest request) {
         User user = findByEmail(email);
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("Current password is incorrect");

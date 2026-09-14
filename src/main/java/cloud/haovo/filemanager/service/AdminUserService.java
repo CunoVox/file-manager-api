@@ -1,6 +1,10 @@
 package cloud.haovo.filemanager.service;
 
-import cloud.haovo.filemanager.api.request.AdminUserRequests;
+import cloud.haovo.filemanager.api.request.AdminResetPasswordRequest;
+import cloud.haovo.filemanager.api.request.CreateAdminUserRequest;
+import cloud.haovo.filemanager.api.request.UpdateAdminUserQuotaRequest;
+import cloud.haovo.filemanager.api.request.UpdateAdminUserRoleRequest;
+import cloud.haovo.filemanager.api.request.UpdateAdminUserStatusRequest;
 import cloud.haovo.filemanager.api.response.AdminUserResponse;
 import cloud.haovo.filemanager.domain.User;
 import cloud.haovo.filemanager.domain.UserRole;
@@ -60,7 +64,7 @@ public class AdminUserService {
                 .map(this::toResponse);
     }
 
-    public AdminUserResponse createUser(AdminUserRequests.Create request) {
+    public AdminUserResponse createUser(CreateAdminUserRequest request) {
         String email = cleanEmail(request.getEmail());
         if (users.existsByEmailIgnoreCase(email)) {
             throw new IllegalArgumentException("Email is already registered");
@@ -80,7 +84,7 @@ public class AdminUserService {
         return toResponse(saved);
     }
 
-    public AdminUserResponse resetPassword(String id, AdminUserRequests.ResetPassword request) {
+    public AdminUserResponse resetPassword(String id, AdminResetPasswordRequest request) {
         User user = findUser(id);
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         User saved = users.save(user);
@@ -90,7 +94,7 @@ public class AdminUserService {
         return toResponse(saved);
     }
 
-    public AdminUserResponse updateRole(String id, AdminUserRequests.UpdateRole request) {
+    public AdminUserResponse updateRole(String id, UpdateAdminUserRoleRequest request) {
         User user = findUser(id);
         UserRole role = parseRole(request.getRole());
         if (isCurrentUser(user) && role != UserRole.ADMIN) {
@@ -103,7 +107,7 @@ public class AdminUserService {
         return toResponse(saved);
     }
 
-    public AdminUserResponse updateStatus(String id, AdminUserRequests.UpdateStatus request) {
+    public AdminUserResponse updateStatus(String id, UpdateAdminUserStatusRequest request) {
         User user = findUser(id);
         if (isCurrentUser(user) && !request.isEnabled()) {
             throw new IllegalArgumentException("You cannot disable your own account");
@@ -115,7 +119,7 @@ public class AdminUserService {
         return toResponse(saved);
     }
 
-    public AdminUserResponse updateQuota(String id, AdminUserRequests.UpdateQuota request) {
+    public AdminUserResponse updateQuota(String id, UpdateAdminUserQuotaRequest request) {
         User user = findUser(id);
         user.setStorageQuotaBytes(normalizeQuota(request.getStorageQuotaBytes()));
         User saved = users.save(user);

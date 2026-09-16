@@ -60,7 +60,15 @@ public class SecurityConfig {
                 .authorizeHttpRequests()
                 .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .antMatchers(
-                        "/api/v1/auth/**",
+                        "/api/v1/auth/register",
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/2fa/verify",
+                        "/api/v1/auth/email/verify",
+                        "/api/v1/auth/email/resend-verification",
+                        "/api/v1/auth/password/forgot",
+                        "/api/v1/auth/password/reset",
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/logout",
                         "/api/v1/billing/plans",
                         "/api/v1/payments/payos/webhook",
                         "/view/**",

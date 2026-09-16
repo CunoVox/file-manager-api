@@ -1,13 +1,17 @@
 package cloud.haovo.filemanager.service;
 
+import cloud.haovo.filemanager.api.request.ChunkUploadInitRequest;
 import cloud.haovo.filemanager.api.response.FileResponse;
 import cloud.haovo.filemanager.api.response.FileShareResponse;
 import cloud.haovo.filemanager.api.response.FolderResponse;
+import cloud.haovo.filemanager.api.response.ChunkUploadSessionResponse;
 import cloud.haovo.filemanager.domain.FileRecord;
 import cloud.haovo.filemanager.domain.FileShare;
+import cloud.haovo.filemanager.domain.FileUploadSession;
 import cloud.haovo.filemanager.domain.Folder;
 import cloud.haovo.filemanager.repository.FileRepository;
 import cloud.haovo.filemanager.repository.FileShareRepository;
+import cloud.haovo.filemanager.repository.FileUploadSessionRepository;
 import cloud.haovo.filemanager.repository.FolderRepository;
 import cloud.haovo.filemanager.domain.User;
 import cloud.haovo.filemanager.domain.UserRole;
@@ -25,20 +29,31 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.SequenceInputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 @Service
 public class FileManagerService {
+    private static final int MAX_CHUNK_PARTS = 10000;
+    private static final Path CHUNK_UPLOAD_ROOT = Path.of(System.getProperty("java.io.tmpdir"), "haobox-upload-parts");
+
     private final FileRepository fileRepository;
     private final FileShareRepository fileShareRepository;
+    private final FileUploadSessionRepository uploadSessionRepository;
     private final FolderRepository folderRepository;
     private final MinioStorageService storage;
     private final cloud.haovo.filemanager.repository.StorageNodeRepository storageNodes;
@@ -48,7 +63,8 @@ public class FileManagerService {
     private final NotificationService notificationService;
     private final String publicBaseUrl;
 
-    public FileManagerService(FileRepository fileRepository, FileShareRepository fileShareRepository, FolderRepository folderRepository,
+    public FileManagerService(FileRepository fileRepository, FileShareRepository fileShareRepository,
+            FileUploadSessionRepository uploadSessionRepository, FolderRepository folderRepository,
             MinioStorageService storage, UserRepository userRepository,
             cloud.haovo.filemanager.repository.StorageNodeRepository storageNodes,
             UserQuotaService userQuotaService,
@@ -57,6 +73,7 @@ public class FileManagerService {
             @Value("${app.public-base-url:http://localhost:8085}") String publicBaseUrl) {
         this.fileRepository = fileRepository;
         this.fileShareRepository = fileShareRepository;
+        this.uploadSessionRepository = uploadSessionRepository;
         this.folderRepository = folderRepository;
         this.storage = storage;
         this.userRepository = userRepository;
@@ -386,6 +403,102 @@ public class FileManagerService {
         }
     }
 
+    public ChunkUploadSessionResponse initChunkUpload(ChunkUploadInitRequest request) {
+        User user = currentUser();
+        if (request.getTotalParts() > MAX_CHUNK_PARTS) {
+            throw new IllegalArgumentException("Upload has too many parts");
+        }
+        long expectedParts = (long) Math.ceil((double) request.getSize() / (double) request.getChunkSize());
+        if (expectedParts != request.getTotalParts()) {
+            throw new IllegalArgumentException("Invalid upload part count");
+        }
+        String parentId = cleanParentId(request.getParentId());
+        userQuotaService.requireAvailable(user, request.getSize());
+        StorageNode node = chooseNode(parentId, request.getStorageNodeId(), request.getSize());
+
+        FileUploadSession session = new FileUploadSession();
+        session.setId(UUID.randomUUID().toString());
+        session.setOwnerId(user.getId());
+        session.setParentId(parentId);
+        session.setStorageNodeId(node.getId());
+        session.setFileName(cleanName(request.getFileName(), 255));
+        session.setMimeType(normalizeMimeType(request.getMimeType()));
+        session.setSize(request.getSize());
+        session.setChunkSize(request.getChunkSize());
+        session.setTotalParts(request.getTotalParts());
+        session.setStatus("UPLOADING");
+        return ChunkUploadSessionResponse.from(uploadSessionRepository.save(session));
+    }
+
+    public ChunkUploadSessionResponse uploadChunk(String uploadId, int partNumber, MultipartFile part) throws IOException {
+        FileUploadSession session = requireUploadSession(uploadId);
+        if (partNumber < 1 || partNumber > session.getTotalParts()) {
+            throw new IllegalArgumentException("Invalid upload part number");
+        }
+        long expectedSize = expectedPartSize(session, partNumber);
+        if (part.getSize() != expectedSize) {
+            throw new IllegalArgumentException("Invalid upload part size");
+        }
+        Path partPath = uploadPartPath(session.getId(), partNumber);
+        Files.createDirectories(partPath.getParent());
+        try (InputStream input = part.getInputStream();
+                OutputStream output = Files.newOutputStream(partPath, StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING)) {
+            input.transferTo(output);
+        }
+        Set<Integer> parts = session.uploadedPartSet();
+        parts.add(partNumber);
+        session.setUploadedPartSet(parts);
+        return ChunkUploadSessionResponse.from(uploadSessionRepository.save(session));
+    }
+
+    @Transactional
+    public FileResponse completeChunkUpload(String uploadId) throws IOException {
+        FileUploadSession session = requireUploadSession(uploadId);
+        Set<Integer> parts = session.uploadedPartSet();
+        if (parts.size() != session.getTotalParts()) {
+            throw new IllegalArgumentException("Upload is not complete");
+        }
+
+        StorageNode node = storageNodes.findById(session.getStorageNodeId())
+                .orElseThrow(() -> new IllegalArgumentException("Storage node not found"));
+        String objectKey;
+        try (InputStream input = openUploadPartsStream(session)) {
+            objectKey = storage.putStream(node, input, session.getSize(), session.getFileName(), session.getMimeType());
+        } catch (RuntimeException exception) {
+            throw new IOException("MinIO upload failed", exception);
+        }
+
+        FileRecord file = new FileRecord();
+        file.setName(session.getFileName());
+        file.setObjectKey(objectKey);
+        file.setStorageNodeId(node.getId());
+        file.setParentId(session.getParentId());
+        file.setOwnerId(session.getOwnerId());
+        file.setMimeType(session.getMimeType());
+        file.setSize(session.getSize());
+        try {
+            FileRecord saved = fileRepository.save(file);
+            session.setStatus("COMPLETED");
+            uploadSessionRepository.save(session);
+            cleanupUploadParts(session.getId());
+            auditLogService.record("FILE_UPLOADED", "FILE", saved.getId(), saved.getName(),
+                    "Uploaded file " + saved.getName(),
+                    Map.of("size", saved.getSize(), "storageNodeId", saved.getStorageNodeId(), "chunked", true));
+            return FileResponse.from(saved, publicBaseUrl);
+        } catch (RuntimeException exception) {
+            storage.delete(node, objectKey, session.getSize());
+            throw exception;
+        }
+    }
+
+    public void cancelChunkUpload(String uploadId) throws IOException {
+        FileUploadSession session = requireUploadSession(uploadId);
+        session.setStatus("ABORTED");
+        uploadSessionRepository.save(session);
+        cleanupUploadParts(session.getId());
+    }
+
     public FileResponse setVisibility(String id, String visibility) {
         FileRecord file = fileRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("File not found"));
         requireOwnerOrAdmin(file.getOwnerId());
@@ -542,6 +655,90 @@ public class FileManagerService {
             throw new IllegalArgumentException("Permission must be VIEW, DOWNLOAD or EDIT");
         }
         return normalized;
+    }
+
+    private FileUploadSession requireUploadSession(String uploadId) {
+        FileUploadSession session = uploadSessionRepository.findById(uploadId)
+                .orElseThrow(() -> new IllegalArgumentException("Upload session not found"));
+        requireOwnerOrAdmin(session.getOwnerId());
+        if (!"UPLOADING".equals(session.getStatus())) {
+            throw new IllegalArgumentException("Upload session is not active");
+        }
+        return session;
+    }
+
+    private long expectedPartSize(FileUploadSession session, int partNumber) {
+        if (partNumber < session.getTotalParts()) {
+            return session.getChunkSize();
+        }
+        long previousBytes = session.getChunkSize() * (session.getTotalParts() - 1L);
+        return session.getSize() - previousBytes;
+    }
+
+    private Path uploadSessionPath(String uploadId) {
+        return CHUNK_UPLOAD_ROOT.resolve(uploadId).normalize();
+    }
+
+    private Path uploadPartPath(String uploadId, int partNumber) {
+        return uploadSessionPath(uploadId).resolve(partNumber + ".part").normalize();
+    }
+
+    private InputStream openUploadPartsStream(FileUploadSession session) throws IOException {
+        List<InputStream> inputs = new ArrayList<>();
+        long totalSize = 0;
+        try {
+            for (int partNumber = 1; partNumber <= session.getTotalParts(); partNumber++) {
+                Path partPath = uploadPartPath(session.getId(), partNumber);
+                if (!Files.exists(partPath)) {
+                    throw new IllegalArgumentException("Upload is missing part " + partNumber);
+                }
+                long partSize = Files.size(partPath);
+                if (partSize != expectedPartSize(session, partNumber)) {
+                    throw new IllegalArgumentException("Upload part " + partNumber + " has an invalid size");
+                }
+                totalSize += partSize;
+                inputs.add(Files.newInputStream(partPath));
+            }
+            if (totalSize != session.getSize()) {
+                throw new IllegalArgumentException("Upload size does not match the original file");
+            }
+            return new SequenceInputStream(Collections.enumeration(inputs));
+        } catch (IOException | RuntimeException exception) {
+            for (InputStream input : inputs) {
+                try {
+                    input.close();
+                } catch (IOException ignored) {
+                    // Best effort cleanup after a failed upload completion.
+                }
+            }
+            throw exception;
+        }
+    }
+
+    private void cleanupUploadParts(String uploadId) throws IOException {
+        Path directory = uploadSessionPath(uploadId);
+        if (!Files.exists(directory)) {
+            return;
+        }
+        try (var paths = Files.walk(directory)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException exception) {
+                    throw new IllegalStateException("Could not delete upload temp file", exception);
+                }
+            });
+        } catch (IllegalStateException exception) {
+            if (exception.getCause() instanceof IOException) {
+                throw (IOException) exception.getCause();
+            }
+            throw exception;
+        }
+    }
+
+    private String normalizeMimeType(String mimeType) {
+        String value = mimeType == null ? "" : mimeType.trim();
+        return value.isEmpty() ? "application/octet-stream" : value;
     }
 
     private void requireFolderDestination(String parentId, String ownerId) {

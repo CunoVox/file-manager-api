@@ -80,6 +80,17 @@ public class MinioStorageService {
         return key;
     }
 
+    public String putStream(StorageNode node, InputStream stream, long size, String fileName, String mimeType) {
+        String key = Instant.now().toString().substring(0, 10) + "/" + UUID.randomUUID() + "-" + fileName;
+        client(node).putObject(
+                PutObjectRequest.builder().bucket(node.getBucket()).key(key).contentType(mimeType).build(),
+                RequestBody.fromInputStream(stream, size));
+        node.setUsedBytes(node.getUsedBytes() + size);
+        node.setBandwidthUsedBytes(node.getBandwidthUsedBytes() + size);
+        nodes.save(node);
+        return key;
+    }
+
     public String createFolder(StorageNode node, String name) {
         String key = "folders/" + UUID.randomUUID() + "/" + name.trim() + "/";
         client(node).putObject(PutObjectRequest.builder().bucket(node.getBucket()).key(key).contentType("application/x-directory").build(), RequestBody.empty());

@@ -14,6 +14,7 @@ import cloud.haovo.filemanager.api.request.VerifyTwoFactorRequest;
 import cloud.haovo.filemanager.api.response.AuthResponse;
 import cloud.haovo.filemanager.service.AuthService;
 import cloud.haovo.filemanager.service.UserQuotaService;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -82,6 +83,9 @@ public class AuthController {
 
     @GetMapping("/me")
     public AuthResponse.UserResponse me(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new AuthenticationCredentialsNotFoundException("Authentication required");
+        }
         cloud.haovo.filemanager.domain.User user = service.findByEmail(authentication.getName());
         return AuthResponse.UserResponse.from(user, userQuotaService.effectiveQuotaBytes(user),
                 userQuotaService.usedBytes(user));

@@ -1,11 +1,13 @@
 package cloud.haovo.filemanager.api.controller;
 
 import cloud.haovo.filemanager.api.request.BulkDownloadRequest;
+import cloud.haovo.filemanager.api.request.ChunkUploadInitRequest;
 import cloud.haovo.filemanager.api.request.CreateFolderRequest;
 import cloud.haovo.filemanager.api.request.MoveRequest;
 import cloud.haovo.filemanager.api.request.RenameRequest;
 import cloud.haovo.filemanager.api.request.ShareRequest;
 import cloud.haovo.filemanager.api.request.VisibilityRequest;
+import cloud.haovo.filemanager.api.response.ChunkUploadSessionResponse;
 import cloud.haovo.filemanager.api.response.FileResponse;
 import cloud.haovo.filemanager.api.response.FileShareResponse;
 import cloud.haovo.filemanager.api.response.FolderResponse;
@@ -57,6 +59,29 @@ public class FileManagerController {
             @RequestParam(required = false) String parentId,
             @RequestParam(required = false) Long storageNodeId) throws IOException {
         return service.upload(file, parentId, storageNodeId);
+    }
+
+    @PostMapping("/files/uploads")
+    public ChunkUploadSessionResponse initChunkUpload(@Valid @RequestBody ChunkUploadInitRequest request) {
+        return service.initChunkUpload(request);
+    }
+
+    @PostMapping(value = "/files/uploads/{uploadId}/parts/{partNumber}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ChunkUploadSessionResponse uploadChunk(@PathVariable String uploadId,
+            @PathVariable int partNumber,
+            @RequestPart("chunk") MultipartFile chunk) throws IOException {
+        return service.uploadChunk(uploadId, partNumber, chunk);
+    }
+
+    @PostMapping("/files/uploads/{uploadId}/complete")
+    public FileResponse completeChunkUpload(@PathVariable String uploadId) throws IOException {
+        return service.completeChunkUpload(uploadId);
+    }
+
+    @DeleteMapping("/files/uploads/{uploadId}")
+    public ResponseEntity<Void> cancelChunkUpload(@PathVariable String uploadId) throws IOException {
+        service.cancelChunkUpload(uploadId);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/files/{id}")

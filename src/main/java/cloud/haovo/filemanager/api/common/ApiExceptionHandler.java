@@ -13,9 +13,11 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.ConstraintViolationException;
+import java.io.EOFException;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -83,6 +85,18 @@ public class ApiExceptionHandler {
                 "This file is too large to upload.", request);
     }
 
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ApiErrorResponse> handleMultipart(MultipartException exception, HttpServletRequest request) {
+        if (isClientAbort(exception)) {
+            log.debug("Multipart upload was cancelled by the client");
+            return error(HttpStatus.BAD_REQUEST, "UPLOAD_CANCELLED",
+                    "The upload was cancelled.", request);
+        }
+        log.warn("Multipart request failed", exception);
+        return error(HttpStatus.BAD_REQUEST, "INVALID_MULTIPART_REQUEST",
+                "The upload request is invalid. Please try again.", request);
+    }
+
     @ExceptionHandler(IOException.class)
     public ResponseEntity<ApiErrorResponse> handleIo(IOException exception, HttpServletRequest request) {
         log.warn("Storage operation failed", exception);
@@ -115,6 +129,21 @@ public class ApiExceptionHandler {
             return "This account has been locked. Please contact an administrator.";
         }
         return message;
+    }
+
+    private boolean isClientAbort(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof EOFException) {
+                return true;
+            }
+            String className = current.getClass().getName();
+            if (className.contains("ClientAbortException")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private String friendlyAccessDeniedMessage(String message) {

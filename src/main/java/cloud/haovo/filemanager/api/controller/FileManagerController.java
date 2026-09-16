@@ -3,14 +3,19 @@ package cloud.haovo.filemanager.api.controller;
 import cloud.haovo.filemanager.api.request.BulkDownloadRequest;
 import cloud.haovo.filemanager.api.request.ChunkUploadInitRequest;
 import cloud.haovo.filemanager.api.request.CreateFolderRequest;
+import cloud.haovo.filemanager.api.request.DirectUploadCompleteRequest;
 import cloud.haovo.filemanager.api.request.MoveRequest;
 import cloud.haovo.filemanager.api.request.RenameRequest;
 import cloud.haovo.filemanager.api.request.ShareRequest;
 import cloud.haovo.filemanager.api.request.VisibilityRequest;
 import cloud.haovo.filemanager.api.response.ChunkUploadSessionResponse;
+import cloud.haovo.filemanager.api.response.DirectUploadInitResponse;
+import cloud.haovo.filemanager.api.response.DirectUploadPartUrlResponse;
 import cloud.haovo.filemanager.api.response.FileResponse;
 import cloud.haovo.filemanager.api.response.FileShareResponse;
 import cloud.haovo.filemanager.api.response.FolderResponse;
+import cloud.haovo.filemanager.api.response.TrashSummaryResponse;
+import cloud.haovo.filemanager.api.response.UploadReservationResponse;
 import cloud.haovo.filemanager.service.FileManagerService;
 import cloud.haovo.filemanager.service.MinioStorageService;
 import org.springframework.core.io.InputStreamResource;
@@ -64,6 +69,29 @@ public class FileManagerController {
     @PostMapping("/files/uploads")
     public ChunkUploadSessionResponse initChunkUpload(@Valid @RequestBody ChunkUploadInitRequest request) {
         return service.initChunkUpload(request);
+    }
+
+    @PostMapping("/files/direct-uploads")
+    public DirectUploadInitResponse initDirectUpload(@Valid @RequestBody ChunkUploadInitRequest request) {
+        return service.initDirectUpload(request);
+    }
+
+    @PostMapping("/files/direct-uploads/{uploadId}/parts/{partNumber}/presign")
+    public DirectUploadPartUrlResponse presignDirectUploadPart(@PathVariable String uploadId,
+            @PathVariable int partNumber) {
+        return service.presignDirectUploadPart(uploadId, partNumber);
+    }
+
+    @PostMapping("/files/direct-uploads/{uploadId}/complete")
+    public FileResponse completeDirectUpload(@PathVariable String uploadId,
+            @Valid @RequestBody DirectUploadCompleteRequest request) {
+        return service.completeDirectUpload(uploadId, request);
+    }
+
+    @DeleteMapping("/files/direct-uploads/{uploadId}")
+    public ResponseEntity<Void> cancelDirectUpload(@PathVariable String uploadId) {
+        service.cancelDirectUpload(uploadId);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping(value = "/files/uploads/{uploadId}/parts/{partNumber}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -209,6 +237,22 @@ public class FileManagerController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
         return service.listTrashFiles(parentId, page, size);
+    }
+
+    @GetMapping("/trash/summary")
+    public TrashSummaryResponse trashSummary() {
+        return service.trashSummary();
+    }
+
+    @GetMapping("/uploads/reservation")
+    public UploadReservationResponse uploadReservation() {
+        return service.uploadReservation();
+    }
+
+    @DeleteMapping("/uploads/reservation")
+    public ResponseEntity<Void> cancelUploadReservations() throws IOException {
+        service.cancelUploadReservations();
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/trash/folders")

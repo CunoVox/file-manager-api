@@ -52,6 +52,11 @@ public class BillingController {
         return billingService.myOrders(page, size);
     }
 
+    @PostMapping("/billing/orders/{id}/cancel")
+    public BillingOrderResponse cancelOrder(@PathVariable String id) {
+        return billingService.cancelOrder(id);
+    }
+
     @GetMapping("/billing/subscriptions")
     public List<UserSubscriptionResponse> mySubscriptions() {
         return billingService.mySubscriptions();

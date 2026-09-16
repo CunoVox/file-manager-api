@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -36,10 +37,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClientException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -70,11 +73,13 @@ public class BillingService {
     private final RestTemplate restTemplate = new RestTemplate();
     private final String publicBaseUrl;
     private final String webBaseUrl;
+    private final Duration pendingOrderTimeout;
 
     public BillingService(AppSettingRepository settings, BillingPlanRepository plans, BillingOrderRepository orders,
             PaymentWebhookLogRepository webhookLogs, UserSubscriptionRepository subscriptions, UserRepository users, AuditLogService auditLogService,
             NotificationService notificationService, SecretEncryptionService encryptionService, ObjectMapper objectMapper,
-            @Value("${app.public-base-url}") String publicBaseUrl, @Value("${app.web-base-url}") String webBaseUrl) {
+            @Value("${app.public-base-url}") String publicBaseUrl, @Value("${app.web-base-url}") String webBaseUrl,
+            @Value("${app.billing.pending-order-timeout-minutes:30}") long pendingOrderTimeoutMinutes) {
         this.settings = settings;
         this.plans = plans;
         this.orders = orders;
@@ -87,6 +92,7 @@ public class BillingService {
         this.objectMapper = objectMapper;
         this.publicBaseUrl = publicBaseUrl;
         this.webBaseUrl = webBaseUrl;
+        this.pendingOrderTimeout = Duration.ofMinutes(pendingOrderTimeoutMinutes);
     }
 
     @Transactional(readOnly = true)
@@ -159,6 +165,8 @@ public class BillingService {
         if (!plan.isActive()) throw new IllegalArgumentException("Billing plan is inactive");
         PayosConfig config = payosConfig();
         if (!config.enabled) throw new IllegalStateException("PayOS is disabled");
+        expirePendingOrders(config);
+        cancelPendingOrdersForUser(user.getId(), config, "A new payment order was created.");
 
         BillingOrder order = new BillingOrder();
         order.setUserId(user.getId());
@@ -235,6 +243,7 @@ public class BillingService {
             order.setPaidAt(Instant.now());
             orders.save(order);
             activateSubscription(order);
+            cancelOtherPendingOrdersForUser(order.getUserId(), order.getId());
             log.setStatus("PROCESSED");
             webhookLogs.save(log);
         } catch (RuntimeException exception) {
@@ -246,11 +255,31 @@ public class BillingService {
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<BillingOrderResponse> myOrders(int page, int size) {
         User user = currentUser();
+        expirePendingOrders();
         return orders.findByUserIdOrderByCreatedAtDesc(user.getId(), PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 50)))
                 .map(BillingOrderResponse::from);
+    }
+
+    @Transactional
+    public BillingOrderResponse cancelOrder(String id) {
+        User user = currentUser();
+        expirePendingOrders();
+        BillingOrder order = orders.findById(id).orElseThrow(() -> new IllegalArgumentException("Billing order not found"));
+        if (!user.getId().equals(order.getUserId())) {
+            throw new org.springframework.security.access.AccessDeniedException("You cannot cancel this billing order");
+        }
+        if (!"PENDING".equals(order.getStatus())) {
+            throw new IllegalStateException("Only pending billing orders can be cancelled");
+        }
+        cancelPayosPaymentLink(order, payosConfig(), "Cancelled by customer.");
+        order.setStatus("CANCELLED");
+        BillingOrder saved = orders.save(order);
+        auditLogService.record("BILLING_ORDER_CANCELLED", "BILLING_ORDER", saved.getId(), saved.getPlanName(),
+                "Cancelled pending billing order " + saved.getProviderOrderCode(), Map.of("userId", user.getId()));
+        return BillingOrderResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
@@ -261,8 +290,9 @@ public class BillingService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public BillingDashboardResponse dashboard() {
+        expirePendingOrders();
         long paidOrders = orders.countByStatus("PAID");
         long pendingOrders = orders.countByStatus("PENDING");
         long paidRevenue = orders.findByStatusOrderByCreatedAtDesc("PAID", PageRequest.of(0, 1000)).stream()
@@ -274,8 +304,9 @@ public class BillingService {
                 paidOrders, pendingOrders, paidRevenue, recent);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<BillingOrderResponse> adminOrders(String status, int page, int size) {
+        expirePendingOrders();
         Page<BillingOrder> result = hasText(status)
                 ? orders.findByStatusOrderByCreatedAtDesc(status.trim().toUpperCase(), PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))
                 : orders.findAllByOrderByCreatedAtDesc(PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)));
@@ -329,6 +360,23 @@ public class BillingService {
                 .map(WebhookLogResponse::from);
     }
 
+    @Transactional
+    @Scheduled(cron = "${app.billing.pending-order-cleanup-cron:0 */5 * * * *}")
+    public void expirePendingOrders() {
+        expirePendingOrders(null);
+    }
+
+    private void expirePendingOrders(PayosConfig config) {
+        Instant cutoff = Instant.now().minus(pendingOrderTimeout);
+        for (BillingOrder order : orders.findByStatusAndCreatedAtBefore("PENDING", cutoff)) {
+            if (!cancelPayosPaymentLinkQuietly(order, config, "Payment order expired.")) {
+                continue;
+            }
+            order.setStatus("EXPIRED");
+            orders.save(order);
+        }
+    }
+
     private void activateSubscription(BillingOrder order) {
         User user = users.findById(order.getUserId()).orElseThrow(() -> new IllegalArgumentException("User not found"));
         subscriptions.findFirstByUserIdAndActiveTrueOrderByStartsAtDesc(user.getId()).ifPresent(subscription -> {
@@ -351,6 +399,68 @@ public class BillingService {
                 "Your HaoBox storage quota was upgraded to " + order.getPlanName() + ".", "BILLING_ORDER", order.getId());
         auditLogService.record("BILLING_ORDER_PAID", "BILLING_ORDER", order.getId(), order.getPlanName(),
                 "Paid quota plan " + order.getPlanName(), Map.of("userId", user.getId(), "amount", order.getAmount()));
+    }
+
+    private void cancelPendingOrdersForUser(String userId, PayosConfig config, String reason) {
+        for (BillingOrder order : orders.findByUserIdAndStatus(userId, "PENDING")) {
+            cancelPayosPaymentLink(order, config, reason);
+            order.setStatus("CANCELLED");
+            orders.save(order);
+        }
+    }
+
+    private void cancelOtherPendingOrdersForUser(String userId, String paidOrderId) {
+        PayosConfig config = payosConfig();
+        for (BillingOrder order : orders.findByUserIdAndStatus(userId, "PENDING")) {
+            if (order.getId().equals(paidOrderId)) {
+                continue;
+            }
+            if (!cancelPayosPaymentLinkQuietly(order, config, "Another payment order was completed.")) {
+                continue;
+            }
+            order.setStatus("CANCELLED");
+            orders.save(order);
+        }
+    }
+
+    private boolean cancelPayosPaymentLinkQuietly(BillingOrder order, PayosConfig config, String reason) {
+        try {
+            cancelPayosPaymentLink(order, config == null ? payosConfig() : config, reason);
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private void cancelPayosPaymentLink(BillingOrder order, PayosConfig config, String reason) {
+        if (order.getProviderOrderCode() <= 0) {
+            throw new IllegalStateException("Payment order does not have a PayOS order code");
+        }
+        if (!config.enabled) {
+            throw new IllegalStateException("PayOS is disabled");
+        }
+        Map<String, Object> body = new HashMap<>();
+        body.put("cancellationReason", trim(reason, 255));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("x-client-id", config.clientId);
+        headers.set("x-api-key", config.apiKey);
+
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(
+                    "https://api-merchant.payos.vn/v2/payment-requests/" + order.getProviderOrderCode() + "/cancel",
+                    new HttpEntity<>(body, headers),
+                    JsonNode.class);
+            JsonNode responseBody = response.getBody();
+            String code = responseBody == null ? "" : responseBody.path("code").asText("");
+            String status = responseBody == null ? "" : responseBody.path("data").path("status").asText("");
+            if (!"00".equals(code) && !"CANCELLED".equalsIgnoreCase(status)) {
+                throw new IllegalStateException("Could not cancel PayOS payment link");
+            }
+        } catch (RestClientException exception) {
+            throw new IllegalStateException("Could not cancel PayOS payment link", exception);
+        }
     }
 
     private void apply(BillingPlan plan, BillingPlanRequest request) {

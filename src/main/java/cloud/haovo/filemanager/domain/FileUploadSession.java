@@ -52,6 +52,15 @@ public class FileUploadSession {
     @Column(nullable = false, length = 30)
     private String status = "UPLOADING";
 
+    @Column(nullable = false, length = 30)
+    private String uploadMode = "SERVER_CHUNK";
+
+    @Column(length = 800)
+    private String objectKey;
+
+    @Column(length = 1000)
+    private String multipartUploadId;
+
     @Column(length = 2000)
     private String uploadedParts = "";
 

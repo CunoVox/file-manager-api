@@ -12,16 +12,27 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 import java.io.InputStream;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -91,6 +102,55 @@ public class MinioStorageService {
         return key;
     }
 
+    public MultipartUpload startMultipartUpload(StorageNode node, String fileName, String mimeType) {
+        String key = objectKey(fileName);
+        CreateMultipartUploadResponse response = client(node).createMultipartUpload(
+                CreateMultipartUploadRequest.builder()
+                        .bucket(node.getBucket())
+                        .key(key)
+                        .contentType(mimeType)
+                        .build());
+        return new MultipartUpload(key, response.uploadId());
+    }
+
+    public String presignUploadPart(StorageNode node, String objectKey, String multipartUploadId,
+            int partNumber, long partSize) {
+        UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
+                .bucket(node.getBucket())
+                .key(objectKey)
+                .uploadId(multipartUploadId)
+                .partNumber(partNumber)
+                .contentLength(partSize)
+                .build();
+        try (S3Presigner presigner = presigner(node)) {
+            return presigner.presignUploadPart(UploadPartPresignRequest.builder()
+                    .signatureDuration(Duration.ofMinutes(30))
+                    .uploadPartRequest(uploadPartRequest)
+                    .build()).url().toString();
+        }
+    }
+
+    public void completeMultipartUpload(StorageNode node, String objectKey, String multipartUploadId,
+            List<CompletedPart> parts, long size) {
+        client(node).completeMultipartUpload(CompleteMultipartUploadRequest.builder()
+                .bucket(node.getBucket())
+                .key(objectKey)
+                .uploadId(multipartUploadId)
+                .multipartUpload(CompletedMultipartUpload.builder().parts(parts).build())
+                .build());
+        node.setUsedBytes(node.getUsedBytes() + size);
+        node.setBandwidthUsedBytes(node.getBandwidthUsedBytes() + size);
+        nodes.save(node);
+    }
+
+    public void abortMultipartUpload(StorageNode node, String objectKey, String multipartUploadId) {
+        client(node).abortMultipartUpload(AbortMultipartUploadRequest.builder()
+                .bucket(node.getBucket())
+                .key(objectKey)
+                .uploadId(multipartUploadId)
+                .build());
+    }
+
     public String createFolder(StorageNode node, String name) {
         String key = "folders/" + UUID.randomUUID() + "/" + name.trim() + "/";
         client(node).putObject(PutObjectRequest.builder().bucket(node.getBucket()).key(key).contentType("application/x-directory").build(), RequestBody.empty());
@@ -156,6 +216,10 @@ public class MinioStorageService {
         }
     }
 
+    private String objectKey(String fileName) {
+        return Instant.now().toString().substring(0, 10) + "/" + UUID.randomUUID() + "-" + fileName;
+    }
+
     private String describeS3Exception(S3Exception exception) {
         String message = exception.awsErrorDetails() == null ? null : exception.awsErrorDetails().errorMessage();
         if (message == null || message.trim().isEmpty()) {
@@ -183,7 +247,35 @@ public class MinioStorageService {
     private S3Client client(StorageNode node) {
         return S3Client.builder().endpointOverride(URI.create(node.getEndpoint())).region(Region.of(node.getRegion() == null ? "us-east-1" : node.getRegion())).credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(node.getAccessKey(), node.getSecretKey()))).httpClient(ApacheHttpClient.builder().build()).forcePathStyle(true).build();
     }
+
+    private S3Presigner presigner(StorageNode node) {
+        return S3Presigner.builder()
+                .endpointOverride(URI.create(node.getEndpoint()))
+                .region(Region.of(node.getRegion() == null ? "us-east-1" : node.getRegion()))
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(node.getAccessKey(), node.getSecretKey())))
+                .serviceConfiguration(software.amazon.awssdk.services.s3.S3Configuration.builder().pathStyleAccessEnabled(true).build())
+                .build();
+    }
+
     private String contentType(MultipartFile file) { return file.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : file.getContentType(); }
+
+    public static class MultipartUpload {
+        private final String objectKey;
+        private final String uploadId;
+
+        public MultipartUpload(String objectKey, String uploadId) {
+            this.objectKey = objectKey;
+            this.uploadId = uploadId;
+        }
+
+        public String getObjectKey() {
+            return objectKey;
+        }
+
+        public String getUploadId() {
+            return uploadId;
+        }
+    }
 
     public static class StoredContent {
         private final String name; private final String mimeType; private final Long size; private final long totalSize;

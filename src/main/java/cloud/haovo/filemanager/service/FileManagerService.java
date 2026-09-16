@@ -1,10 +1,15 @@
 package cloud.haovo.filemanager.service;
 
 import cloud.haovo.filemanager.api.request.ChunkUploadInitRequest;
+import cloud.haovo.filemanager.api.request.DirectUploadCompleteRequest;
 import cloud.haovo.filemanager.api.response.FileResponse;
 import cloud.haovo.filemanager.api.response.FileShareResponse;
 import cloud.haovo.filemanager.api.response.FolderResponse;
 import cloud.haovo.filemanager.api.response.ChunkUploadSessionResponse;
+import cloud.haovo.filemanager.api.response.DirectUploadInitResponse;
+import cloud.haovo.filemanager.api.response.DirectUploadPartUrlResponse;
+import cloud.haovo.filemanager.api.response.TrashSummaryResponse;
+import cloud.haovo.filemanager.api.response.UploadReservationResponse;
 import cloud.haovo.filemanager.domain.FileRecord;
 import cloud.haovo.filemanager.domain.FileShare;
 import cloud.haovo.filemanager.domain.FileUploadSession;
@@ -25,6 +30,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -126,6 +132,35 @@ public class FileManagerService {
                 ? folderRepository.findByOwnerIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(user.getId(), pageRequest)
                 : folderRepository.findByOwnerIdAndParentIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(user.getId(), parentId, pageRequest);
         return folders.map(FolderResponse::from);
+    }
+
+    public TrashSummaryResponse trashSummary() {
+        User user = currentUser();
+        long fileCount = fileRepository.countByOwnerIdAndDeletedAtIsNotNull(user.getId());
+        long folderCount = folderRepository.countByOwnerIdAndDeletedAtIsNotNull(user.getId());
+        long totalBytes = fileRepository.sumTrashSizeByOwnerId(user.getId());
+        return new TrashSummaryResponse(fileCount + folderCount, totalBytes);
+    }
+
+    public UploadReservationResponse uploadReservation() {
+        User user = currentUser();
+        return new UploadReservationResponse(userQuotaService.reservedUploadBytes(user));
+    }
+
+    public void cancelUploadReservations() throws IOException {
+        User user = currentUser();
+        for (FileUploadSession session : uploadSessionRepository.findByOwnerIdAndStatus(user.getId(), "UPLOADING")) {
+            if ("DIRECT_MULTIPART".equals(session.getUploadMode())
+                    && session.getObjectKey() != null
+                    && session.getMultipartUploadId() != null) {
+                StorageNode node = storageNodes.findById(session.getStorageNodeId())
+                        .orElseThrow(() -> new IllegalArgumentException("Storage node not found"));
+                storage.abortMultipartUpload(node, session.getObjectKey(), session.getMultipartUploadId());
+            }
+            session.setStatus("ABORTED");
+            uploadSessionRepository.save(session);
+            cleanupUploadParts(session.getId());
+        }
     }
 
     public FileResponse upload(MultipartFile upload, String parentId, Long storageNodeId) throws IOException {
@@ -404,6 +439,10 @@ public class FileManagerService {
     }
 
     public ChunkUploadSessionResponse initChunkUpload(ChunkUploadInitRequest request) {
+        return ChunkUploadSessionResponse.from(createUploadSession(request, "SERVER_CHUNK"));
+    }
+
+    private synchronized FileUploadSession createUploadSession(ChunkUploadInitRequest request, String uploadMode) {
         User user = currentUser();
         if (request.getTotalParts() > MAX_CHUNK_PARTS) {
             throw new IllegalArgumentException("Upload has too many parts");
@@ -427,7 +466,98 @@ public class FileManagerService {
         session.setChunkSize(request.getChunkSize());
         session.setTotalParts(request.getTotalParts());
         session.setStatus("UPLOADING");
-        return ChunkUploadSessionResponse.from(uploadSessionRepository.save(session));
+        session.setUploadMode(uploadMode);
+        return uploadSessionRepository.save(session);
+    }
+
+    public DirectUploadInitResponse initDirectUpload(ChunkUploadInitRequest request) {
+        FileUploadSession session = createUploadSession(request, "DIRECT_MULTIPART");
+        StorageNode node = storageNodes.findById(session.getStorageNodeId())
+                .orElseThrow(() -> new IllegalArgumentException("Storage node not found"));
+        try {
+            MinioStorageService.MultipartUpload multipartUpload =
+                    storage.startMultipartUpload(node, session.getFileName(), session.getMimeType());
+            session.setObjectKey(multipartUpload.getObjectKey());
+            session.setMultipartUploadId(multipartUpload.getUploadId());
+            return DirectUploadInitResponse.from(uploadSessionRepository.save(session));
+        } catch (RuntimeException exception) {
+            session.setStatus("ABORTED");
+            uploadSessionRepository.save(session);
+            throw exception;
+        }
+    }
+
+    public DirectUploadPartUrlResponse presignDirectUploadPart(String uploadId, int partNumber) {
+        FileUploadSession session = requireDirectUploadSession(uploadId);
+        if (partNumber < 1 || partNumber > session.getTotalParts()) {
+            throw new IllegalArgumentException("Invalid upload part number");
+        }
+        StorageNode node = storageNodes.findById(session.getStorageNodeId())
+                .orElseThrow(() -> new IllegalArgumentException("Storage node not found"));
+        String url = storage.presignUploadPart(node, session.getObjectKey(), session.getMultipartUploadId(),
+                partNumber, expectedPartSize(session, partNumber));
+        return new DirectUploadPartUrlResponse(partNumber, url);
+    }
+
+    @Transactional
+    public FileResponse completeDirectUpload(String uploadId, DirectUploadCompleteRequest request) {
+        FileUploadSession session = requireDirectUploadSession(uploadId);
+        List<CompletedPart> completedParts = request.getParts().stream()
+                .collect(Collectors.toMap(DirectUploadCompleteRequest.Part::getPartNumber, part -> part,
+                        (left, right) -> left))
+                .values()
+                .stream()
+                .sorted(Comparator.comparingInt(DirectUploadCompleteRequest.Part::getPartNumber))
+                .map(part -> {
+                    if (part.getPartNumber() < 1 || part.getPartNumber() > session.getTotalParts()) {
+                        throw new IllegalArgumentException("Invalid upload part number");
+                    }
+                    return CompletedPart.builder()
+                            .partNumber(part.getPartNumber())
+                            .eTag(part.getEtag())
+                            .build();
+                })
+                .collect(Collectors.toList());
+        if (completedParts.size() != session.getTotalParts()) {
+            throw new IllegalArgumentException("Upload is not complete");
+        }
+
+        StorageNode node = storageNodes.findById(session.getStorageNodeId())
+                .orElseThrow(() -> new IllegalArgumentException("Storage node not found"));
+        storage.completeMultipartUpload(node, session.getObjectKey(), session.getMultipartUploadId(),
+                completedParts, session.getSize());
+
+        FileRecord file = new FileRecord();
+        file.setName(session.getFileName());
+        file.setObjectKey(session.getObjectKey());
+        file.setStorageNodeId(node.getId());
+        file.setParentId(session.getParentId());
+        file.setOwnerId(session.getOwnerId());
+        file.setMimeType(session.getMimeType());
+        file.setSize(session.getSize());
+        try {
+            FileRecord saved = fileRepository.save(file);
+            session.setStatus("COMPLETED");
+            uploadSessionRepository.save(session);
+            auditLogService.record("FILE_UPLOADED", "FILE", saved.getId(), saved.getName(),
+                    "Uploaded file " + saved.getName(),
+                    Map.of("size", saved.getSize(), "storageNodeId", saved.getStorageNodeId(), "directMultipart", true));
+            return FileResponse.from(saved, publicBaseUrl);
+        } catch (RuntimeException exception) {
+            storage.delete(node, session.getObjectKey(), session.getSize());
+            session.setStatus("ABORTED");
+            uploadSessionRepository.save(session);
+            throw exception;
+        }
+    }
+
+    public void cancelDirectUpload(String uploadId) {
+        FileUploadSession session = requireDirectUploadSession(uploadId);
+        StorageNode node = storageNodes.findById(session.getStorageNodeId())
+                .orElseThrow(() -> new IllegalArgumentException("Storage node not found"));
+        storage.abortMultipartUpload(node, session.getObjectKey(), session.getMultipartUploadId());
+        session.setStatus("ABORTED");
+        uploadSessionRepository.save(session);
     }
 
     public ChunkUploadSessionResponse uploadChunk(String uploadId, int partNumber, MultipartFile part) throws IOException {
@@ -488,6 +618,8 @@ public class FileManagerService {
             return FileResponse.from(saved, publicBaseUrl);
         } catch (RuntimeException exception) {
             storage.delete(node, objectKey, session.getSize());
+            session.setStatus("ABORTED");
+            uploadSessionRepository.save(session);
             throw exception;
         }
     }
@@ -663,6 +795,17 @@ public class FileManagerService {
         requireOwnerOrAdmin(session.getOwnerId());
         if (!"UPLOADING".equals(session.getStatus())) {
             throw new IllegalArgumentException("Upload session is not active");
+        }
+        return session;
+    }
+
+    private FileUploadSession requireDirectUploadSession(String uploadId) {
+        FileUploadSession session = requireUploadSession(uploadId);
+        if (!"DIRECT_MULTIPART".equals(session.getUploadMode())) {
+            throw new IllegalArgumentException("Upload session is not a direct multipart upload");
+        }
+        if (session.getObjectKey() == null || session.getMultipartUploadId() == null) {
+            throw new IllegalArgumentException("Upload session is incomplete");
         }
         return session;
     }

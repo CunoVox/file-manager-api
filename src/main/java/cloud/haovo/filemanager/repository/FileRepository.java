@@ -36,6 +36,11 @@ public interface FileRepository extends JpaRepository<FileRecord, String> {
     @Query("select coalesce(sum(file.size), 0) from FileRecord file where file.ownerId = :ownerId")
     long sumSizeByOwnerId(@Param("ownerId") String ownerId);
 
+    long countByOwnerIdAndDeletedAtIsNotNull(String ownerId);
+
+    @Query("select coalesce(sum(file.size), 0) from FileRecord file where file.ownerId = :ownerId and file.deletedAt is not null")
+    long sumTrashSizeByOwnerId(@Param("ownerId") String ownerId);
+
     @Modifying
     @Transactional
     @Query(value = "WITH RECURSIVE folder_tree AS (" +

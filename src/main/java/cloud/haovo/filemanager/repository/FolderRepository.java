@@ -31,6 +31,8 @@ public interface FolderRepository extends JpaRepository<Folder, String> {
 
     List<Folder> findByStorageNodeIdOrderByCreatedAtAsc(Long storageNodeId);
 
+    long countByOwnerIdAndDeletedAtIsNotNull(String ownerId);
+
     @Modifying
     @Transactional
     @Query(value = "WITH RECURSIVE folder_tree AS (" +

@@ -3,6 +3,7 @@ package cloud.haovo.filemanager.config;
 import cloud.haovo.filemanager.api.common.ApiErrorResponse;
 import cloud.haovo.filemanager.security.ApiKeyAuthenticationFilter;
 import cloud.haovo.filemanager.security.JwtAuthenticationFilter;
+import cloud.haovo.filemanager.security.RequestLoggingFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -26,12 +27,14 @@ import javax.servlet.http.HttpServletResponse;
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
     private final ApiKeyAuthenticationFilter apiKeyFilter;
+    private final RequestLoggingFilter requestLoggingFilter;
     private final ObjectMapper objectMapper;
 
     public SecurityConfig(JwtAuthenticationFilter jwtFilter, ApiKeyAuthenticationFilter apiKeyFilter,
-            ObjectMapper objectMapper) {
+            RequestLoggingFilter requestLoggingFilter, ObjectMapper objectMapper) {
         this.jwtFilter = jwtFilter;
         this.apiKeyFilter = apiKeyFilter;
+        this.requestLoggingFilter = requestLoggingFilter;
         this.objectMapper = objectMapper;
     }
 
@@ -80,7 +83,8 @@ public class SecurityConfig {
                 .permitAll()
                 .anyRequest().authenticated().and()
                 .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(requestLoggingFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

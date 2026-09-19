@@ -11,8 +11,8 @@ spring:
     open-in-view: false
   servlet:
     multipart:
-      max-file-size: ${MAX_FILE_SIZE:32MB}
-      max-request-size: ${MAX_REQUEST_SIZE:40MB}
+      max-file-size: ${MAX_FILE_SIZE:500MB}
+      max-request-size: ${MAX_REQUEST_SIZE:500MB}
 app:
   public-base-url: ${PUBLIC_BASE_URL:http://localhost:8085}
   web-base-url: ${WEB_BASE_URL:http://localhost:5173}
